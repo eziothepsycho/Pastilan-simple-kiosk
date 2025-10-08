@@ -202,7 +202,7 @@ def manage_cart():
 #MAIN MENU GO BACK
 def go_back_to_main():
     root.destroy()
-    subprocess.Popen(["python", "MAINMENU.py"])
+    subprocess.Popen(["python", "mainmenu.py"])
 
 # Main
 root = tk.Tk()

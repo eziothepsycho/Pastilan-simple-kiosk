@@ -1,8 +1,15 @@
-import subprocess
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox
+import subprocess
+import os
+try:
+    from PIL import Image, ImageTk
+except ImportError:
+    print("Please install Pillow: pip install pillow")
+    messagebox.showerror("Missing dependency", "Please install Pillow: pip install pillow")
+    raise
 
-# Menu data
+# --- DATA ---
 Chicken = {
     1: ("Regular Chicken", 20),
     2: ("Spicy Chicken", 30),
@@ -12,54 +19,67 @@ Chicken = {
 
 cart = []
 
-# Add to cart
+# --- STYLES ---
+button_style = {
+    "font": ("Helvetica", 12),
+    "bg": "#3a3a3a",
+    "fg": "#ffffff",
+    "activebackground": "#555555",
+    "activeforeground": "#ffffff",
+    "bd": 0
+}
+
+label_style = {"bg": "#1e1e1e", "fg": "#ffffff"}
+frame_style = {"bg": "#1e1e1e"}
+text_style = {"bg": "#2a2a2a", "fg": "#ffffff", "insertbackground": "#ffffff", "font": ("Tahoma")}
+
+# --- FUNCTIONS ---
+def center_window(win, width=500, height=650):
+    win.update_idletasks()
+    screen_width = win.winfo_screenwidth()
+    screen_height = win.winfo_screenheight()
+    x = (screen_width // 2) - (width // 2)
+    y = (screen_height // 2) - (height // 2)
+    win.geometry(f"{width}x{height}+{x}+{y}")
+
 def add_to_cart(item_id):
     item_name, item_price = Chicken[item_id]
     show_quantity_pad(item_name, item_price)
 
 def show_quantity_pad(item_name, item_price):
     pad = tk.Toplevel(root)
-    pad.title("Select Quantity")
-    pad.geometry("400x350")
-    pad.configure(bg="#f0f0f0")
-    pad.grab_set()  # Lock focus
+    pad.overrideredirect(True)
+    center_window(pad, 300, 300)
+    pad.configure(bg="#1e1e1e")
+    pad.grab_set()
 
-    selected_qty = tk.StringVar(value="")
+    tk.Label(pad, text="Select Quantity", font=("Helvetica", 16, "bold"), bg="#1e1e1e", fg="#ffffff").pack(pady=(15, 5))
+    qty = tk.IntVar(value=1)
+    display = tk.Label(pad, textvariable=qty, font=("Helvetica", 24), width=10, bg="#1e1e1e", fg="#ffffff")
+    display.pack(pady=20)
 
-    display = tk.Label(pad, textvariable=selected_qty, font=("Helvetica", 20), bg="#ffffff", width=6, relief="sunken")
-    display.pack(pady=10)
+    btn_frame = tk.Frame(pad, bg="#1e1e1e")
+    btn_frame.pack(pady=10)
 
-    btn_frame = tk.Frame(pad, bg="#f0f0f0")
-    btn_frame.pack()
+    def increase():
+        qty.set(qty.get() + 1)
 
-    delete_btn = tk.Button(btn_frame, text="←", font=("Helvetica", 14), width=4,
-                           command=lambda: selected_qty.set(selected_qty.get()[:-1]))
-    delete_btn.grid(row=3, column=0, padx=5, pady=5)
+    def decrease():
+        if qty.get() > 1:
+            qty.set(qty.get() - 1)
 
-    for i in range(1, 10):
-        btn = tk.Button(btn_frame, text=str(i), font=("Helvetica", 14), width=4,
-                        command=lambda n=i: selected_qty.set(selected_qty.get() + str(n)))
-        btn.grid(row=(i-1)//3, column=(i-1)%3, padx=5, pady=5)
+    tk.Button(btn_frame, text="−", width=8, command=decrease, **button_style).grid(row=0, column=0, padx=10)
+    tk.Button(btn_frame, text="+", width=8, command=increase, **button_style).grid(row=0, column=1, padx=10)
 
-    btn0 = tk.Button(btn_frame, text="0", font=("Helvetica", 14), width=4,
-                     command=lambda: selected_qty.set(selected_qty.get() + "0"))
-    btn0.grid(row=3, column=1, padx=5, pady=5)
+    def confirm_quantity_pad():
+        confirm_quantity(qty.get(), item_name, item_price, pad)
 
-    confirm_btn = tk.Button(pad, text="Confirm", font=("Helvetica", 12), bg="#4caf50", fg="white",
-                            command=lambda: confirm_quantity(selected_qty, item_name, item_price, pad))
-    confirm_btn.pack(pady=10)
+    tk.Button(pad, text="Confirm", width=15, command=confirm_quantity_pad, **button_style).pack(pady=10)
+    tk.Button(pad, text="Cancel", width=15, command=pad.destroy, **button_style).pack(pady=5)
 
-    cancel_btn = tk.Button(pad, text="Cancel", font=("Helvetica", 12), bg="#f44336", fg="white",
-                           command=pad.destroy)
-    cancel_btn.pack(pady=5)
-
-def confirm_quantity(selected_qty, item_name, item_price, pad):
-    try:
-        qty = int(selected_qty.get())
-        if qty <= 0:
-            raise ValueError
-    except ValueError:
-        messagebox.showerror("Invalid Quantity", "Please select a valid quantity.")
+def confirm_quantity(qty, item_name, item_price, pad):
+    if qty <= 0:
+        show_ok_popup("Please select a valid quantity.")
         return
     subtotal = item_price * qty
     for i in range(len(cart)):
@@ -74,55 +94,81 @@ def confirm_quantity(selected_qty, item_name, item_price, pad):
     update_cart_display()
     pad.destroy()
 
-# Update cart
 def update_cart_display():
-    cart_list.delete(0, tk.END)
+    cart_list.configure(state="normal")
+    cart_list.delete("1.0", "end")
     total = 0
     for name, qty, subtotal in cart:
-        cart_list.insert(tk.END, f"{qty} x {name} = ₱{subtotal}")
+        cart_list.insert("end", f"{qty} x {name} = ₱{subtotal}\n")
         total += subtotal
+    cart_list.configure(state="disabled")
     total_label.config(text=f"Total: ₱{total}")
 
-# Checkout
 def checkout():
     if not cart:
-        messagebox.showinfo("Cart Empty", "Your cart is empty.")
+        show_ok_popup("Your cart is empty.")
         return
 
     def ask_order_type():
         choice_window = tk.Toplevel(root)
         choice_window.title("Order Type")
-        choice_window.geometry("250x150")
-        choice_window.configure(bg="#f0f0f0")
+        center_window(choice_window, 250, 200)
         choice_window.grab_set()
+        choice_window.overrideredirect(True)
 
-        tk.Label(choice_window, text="Select Order Type", font=("Helvetica", 12), bg="#f0f0f0").pack(pady=10)
+        tk.Label(choice_window, text="Select Order Type", font=("Helvetica", 12)).pack(pady=10)
 
         def set_order_type(mode):
-            show_receipt(mode)
             choice_window.destroy()
+            show_receipt(mode)
 
-        tk.Button(choice_window, text="Dine In", font=("Helvetica", 12), width=10, command=lambda: set_order_type("Dine In")).pack(pady=5)
-        tk.Button(choice_window, text="Take Out", font=("Helvetica", 12), width=10, command=lambda: set_order_type("Take Out")).pack(pady=5)
+        tk.Button(choice_window, text="Dine In", command=lambda: set_order_type("Dine In"), **button_style, padx=17, pady=10).pack(pady=5)
+        tk.Button(choice_window, text="Take Out", command=lambda: set_order_type("Take Out"), **button_style, padx=10, pady=10).pack(pady=5)
+        tk.Button(choice_window, text="Cancel",command=choice_window.destroy,font=("Helvetica", 11),bg="#e57373", fg="white",activebackground="#ef5350", activeforeground="white",bd=0, padx=20, pady=10).pack(pady=10)
 
     def show_receipt(order_mode):
-        receipt = "\n".join([f"{qty}x {name}" for name, qty, _ in cart])
-        total = sum(total for _, _, total in cart)
-        messagebox.showinfo("Receipt", f"Your order:\n{receipt}\n\nTotal: ₱{total}\nOrder Type: {order_mode}\n\nThank you!")
-        cart.clear()
-        update_cart_display()
+        loading = tk.Toplevel(root)
+        loading.title("Processing Order")
+        loading.overrideredirect(True)
+        center_window(loading, 250, 100)
+        loading.grab_set()
 
+        tk.Label(loading, text="⏳ Preparing your receipt...", font=("Helvetica", 14)).pack(pady=30)
+
+        def finish_loading():
+            loading.destroy()
+            receipt = "\n".join([f"{qty}x {name}" for name, qty, _ in cart])
+            total = sum(total for _, _, total in cart)
+
+            message = (f"Your order:\n{receipt}\n\n"
+                       f"Total: ₱{total}\n"
+                       f"Order Type: {order_mode}\n\n"
+                       "Thank you!")
+            cart.clear()
+            update_cart_display()
+            # Instead of destroying immediately, wait until OK is clicked
+            def on_ok():
+                root.withdraw()
+                subprocess.Popen(["python", "main.py"])
+
+            show_ok_popup(message, on_ok)
+        loading.after(1500, finish_loading)
     ask_order_type()
 
-# Cart Functions
 def delete_cart_item(index, window):
     item_name, qty, _ = cart[index]
-    confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete {qty} x {item_name}?")
-    if confirm:
+
+    # use your custom yes/no popup
+    if show_yes_no_popup(f"Delete {qty} x {item_name}?"):
         del cart[index]
         update_cart_display()
+        # close and reopen manage cart to refresh the list
         window.destroy()
         manage_cart()
+        show_ok_popup(f"{qty} x {item_name} has been removed.")
+    else:
+        print("User cancelled deletion.")
+
 
 def edit_cart_item(index, window):
     item_name, _, _ = cart[index]
@@ -132,110 +178,230 @@ def edit_cart_item(index, window):
 
 def show_quantity_pad_edit(item_name, item_price, index):
     pad = tk.Toplevel(root)
-    pad.title("Edit Quantity")
-    pad.geometry("400x350")
-    pad.configure(bg="#f0f0f0")
+    pad.overrideredirect(True)
+    center_window(pad, 300, 300)
+    pad.configure(bg="#1e1e1e")
     pad.grab_set()
 
-    selected_qty = tk.StringVar(value="")
+    tk.Label(pad, text="Update Quantity", font=("Helvetica", 16, "bold"), bg="#1e1e1e", fg="#ffffff").pack(pady=(15, 5))
+    current_qty = cart[index][1]
+    qty = tk.IntVar(value=current_qty)
 
-    display = tk.Label(pad, textvariable=selected_qty, font=("Helvetica", 20), bg="#ffffff", width=6, relief="sunken")
-    display.pack(pady=10)
+    display = tk.Label(pad, textvariable=qty, font=("Helvetica", 24), width=10, bg="#1e1e1e", fg="#ffffff")
+    display.pack(pady=20)
 
-    btn_frame = tk.Frame(pad, bg="#f0f0f0")
-    btn_frame.pack()
+    btn_frame = tk.Frame(pad, bg="#1e1e1e")
+    btn_frame.pack(pady=10)
 
-    delete_btn = tk.Button(btn_frame, text="←", font=("Helvetica", 14), width=4,
-                           command=lambda: selected_qty.set(selected_qty.get()[:-1]))
-    delete_btn.grid(row=3, column=0, padx=5, pady=5)
+    def increase():
+        qty.set(qty.get() + 1)
 
-    for i in range(1, 10):
-        btn = tk.Button(btn_frame, text=str(i), font=("Helvetica", 14), width=4,
-                        command=lambda n=i: selected_qty.set(selected_qty.get() + str(n)))
-        btn.grid(row=(i-1)//3, column=(i-1)%3, padx=5, pady=5)
+    def decrease():
+        if qty.get() > 1:
+            qty.set(qty.get() - 1)
 
-    btn0 = tk.Button(btn_frame, text="0", font=("Helvetica", 14), width=4,
-                     command=lambda: selected_qty.set(selected_qty.get() + "0"))
-    btn0.grid(row=3, column=1, padx=5, pady=5)
+    tk.Button(btn_frame, text="−", width=8, command=decrease, **button_style).grid(row=0, column=0, padx=10)
+    tk.Button(btn_frame, text="+", width=8, command=increase, **button_style).grid(row=0, column=1, padx=10)
 
     def confirm_edit():
-        try:
-            qty = int(selected_qty.get())
-            if qty <= 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror("Invalid Quantity", "Please select a valid quantity.")
-            return
-        new_total = item_price * qty
-        cart[index] = (item_name, qty, new_total)
+        new_qty = qty.get()
+        new_total = item_price * new_qty
+        cart[index] = (item_name, new_qty, new_total)
         update_cart_display()
         pad.destroy()
 
-    confirm_btn = tk.Button(pad, text="Confirm", font=("Helvetica", 12), bg="#4caf50", fg="white", command=confirm_edit)
-    confirm_btn.pack(pady=10)
+    tk.Button(pad, text="Confirm", width=15, command=confirm_edit, **button_style).pack(pady=10)
+    tk.Button(pad, text="Cancel", width=15, command=pad.destroy, **button_style).pack(pady=5)
 
-    cancel_btn = tk.Button(pad, text="Cancel", font=("Helvetica", 12), bg="#f44336", fg="white", command=pad.destroy)
-    cancel_btn.pack(pady=5)
-
-# Manage Cart
 def manage_cart():
     if not cart:
-        messagebox.showinfo("Cart Empty", "Your cart is empty.")
+        show_ok_popup("Your cart is empty.")
         return
 
     cart_window = tk.Toplevel(root)
-    cart_window.title("Manage Cart")
-    cart_window.geometry("400x300")
-    cart_window.configure(bg="#f0f0f0")
+    cart_window.overrideredirect(True)
+    center_window(cart_window, 400, 300)
     cart_window.grab_set()
 
-    tk.Label(cart_window, text="🛠️ Edit or Delete Items", font=("Helvetica", 14), bg="#f0f0f0").pack(pady=10)
+    tk.Label(cart_window, text="🛠️ Edit or Delete Items", font=("Helvetica", 14)).pack(pady=10)
 
     for index, (name, qty, total) in enumerate(cart):
-        frame = tk.Frame(cart_window, bg="#f0f0f0")
+        frame = tk.Frame(cart_window)
         frame.pack(fill='x', padx=10, pady=5)
 
-        tk.Label(frame, text=f"{qty} x {name} = ₱{total}", font=("Helvetica", 11), bg="#f0f0f0").pack(side='left')
+        tk.Label(frame, text=f"{qty} x {name} = ₱{total}", font=("Helvetica", 11)).pack(side='left')
+        tk.Button(frame, text="Edit", width=6,  **button_style, command=lambda i=index: edit_cart_item(i, cart_window)).pack(side='right', padx=5)
+        tk.Button(frame, text="Delete", width=6, **button_style, command=lambda i=index: delete_cart_item(i, cart_window)).pack(side='right')
 
-        tk.Button(frame, text="Edit", font=("Helvetica", 10), command=lambda i=index: edit_cart_item(i, cart_window)).pack(side='right', padx=5)
-        tk.Button(frame, text="Delete", font=("Helvetica", 10), command=lambda i=index: delete_cart_item(i, cart_window)).pack(side='right')
+    bottom_frame = tk.Frame(cart_window)
+    bottom_frame.pack(side='bottom', fill='x', pady=10, padx=10)
 
-# MAIN MENU GO BACK
+    tk.Button(bottom_frame, text="Cancel", width=10, bg="#1e1e1e", fg="white", font=("Helvetica", 11), bd=0, relief="flat", command=cart_window.destroy).pack(side='right', padx=5)
+    tk.Button(bottom_frame,text="Delete All",width=10,bg="#f44336",fg="white",font=("Helvetica", 11),bd=0,relief="flat",command=lambda: delete_all_items(cart_window)
+    ).pack(side='right', padx=5)
+
+
 def go_back_to_main():
-    root.destroy()  # Close the chicken window
-    subprocess.Popen(["python", "MAINMENU.py"])
+    root.destroy()
+    subprocess.Popen(["python", "mainmenu.py"])
 
-# Main
+def delete_all_items(window):
+    if show_yes_no_popup("Are you sure you want to delete all items?"):
+        cart.clear()
+        update_cart_display()
+        window.destroy()
+        show_ok_popup("All items are deleted.")
+
+    else:
+        print("User cancelled deletion.")
+
+def show_ok_popup(message, on_ok=None):
+    popup = tk.Toplevel(root)
+    popup.overrideredirect(True)
+    center_window(popup, 300, 300)
+    popup.configure(bg="#ffffff")
+
+    tk.Label(popup, text=message, padx=20, font=("Helvetica", 12),
+             bg="#ffffff", fg="#2a2a2a", wraplength=260).pack(pady=15)
+
+    def close_popup():
+        popup.destroy()
+        if on_ok:
+            on_ok()  # run callback if provided
+
+    tk.Button(popup, text="OK", command=close_popup,
+              font=("Helvetica", 10), bg="#4caf50", fg="#ffffff",
+              activebackground="#66bb6a", activeforeground="#ffffff",
+              bd=0, width=10).pack(pady=10)
+
+def show_yes_no_popup(message):
+    popup = tk.Toplevel(root)
+    popup.overrideredirect(True)
+    center_window(popup, 300, 150)
+    popup.configure(bg="#ffffff")
+
+    result = tk.BooleanVar(value=False)  # store user's choice
+
+    tk.Label(
+        popup,
+        text=message,
+        padx=20,
+        font=("Helvetica", 12),
+        bg="#ffffff",
+        fg="#2a2a2a"
+    ).pack(pady=20)
+
+    button_frame = tk.Frame(popup, bg="#ffffff")
+    button_frame.pack(pady=10)
+
+    def choose_yes():
+        result.set(True)
+        popup.destroy()
+
+    def choose_no():
+        result.set(False)
+        popup.destroy()
+
+    tk.Button(
+        button_frame, text="Yes",
+        command=choose_yes,
+        font=("Helvetica", 10), bg="#4caf50", fg="#ffffff",
+        activebackground="#66bb6a", activeforeground="#ffffff",
+        bd=0, width=10
+    ).pack(side="left", padx=10)
+
+    tk.Button(
+        button_frame, text="No",
+        command=choose_no,
+        font=("Helvetica", 10), bg="#f44336", fg="#ffffff",
+        activebackground="#e57373", activeforeground="#ffffff",
+        bd=0, width=10
+    ).pack(side="left", padx=10)
+
+    popup.grab_set()
+    popup.wait_window()  # wait until popup closes
+    return result.get()
+
+
+# --- MAIN WINDOW ---
 root = tk.Tk()
-back_btn = tk.Button(root, text="← Back", font=("Helvetica", 10), bg="#e57373", fg="white", command=go_back_to_main)
-back_btn.pack(anchor='nw', padx=10, pady=5)
 root.title("Pastil Kiosk - Chicken Menu")
-root.geometry("500x650")
-root.configure(bg="#f5f5f5")
+root.configure(bg="#1e1e1e")
+root.attributes("-fullscreen", True)
+def load_image(filename, size=(100, 100)):
+    """Load image with PIL and return an ImageTk.PhotoImage.
+       If file not found or invalid, return an empty PhotoImage placeholder."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, filename)
 
-title_label = tk.Label(root, text="🍗 Chicken Menu", font=("Helvetica", 16, "bold"), bg="#f5f5f5")
-title_label.pack(pady=10)
+    if not os.path.exists(path):
+        print(f"[load_image] file not found: {path}")
+        return tk.PhotoImage(width=size[0], height=size[1])  # blank placeholder
 
-menu_frame = tk.Frame(root, bg="#f5f5f5")
-menu_frame.pack(pady=5)
+    try:
+        img = Image.open(path)
+        # convert to a format TK likes and resize to fit UI
+        img = img.convert("RGBA")
+        img.thumbnail(size)  # keeps aspect ratio
+        return ImageTk.PhotoImage(img)
+    except Exception as e:
+        print(f"[load_image] error opening {path}: {e}")
+        return tk.PhotoImage(width=size[0], height=size[1])
 
+images = {
+    1: load_image("images/regular.jpg", size=(200, 200)),
+    2: load_image("images/spicy.jpg", size=(200, 200)),
+    3: load_image("images/regular.jpg", size=(200, 200)),
+    4: load_image("images/spicy.jpg", size=(200, 200))
+}
+
+# --- UI ---
+tk.Button(root, text="← Back", font=("Helvetica", 12, "bold"), width=8, bg="#e57373", bd=0, padx=15, pady=8, fg="#ffffff", command=go_back_to_main).pack(anchor='nw', padx=20, pady=20)
+tk.Label(root, text="🍗 Chicken Menu", font=("Helvetica", 32, "bold"), **label_style).pack(pady=10)
+
+menu_frame = tk.Frame(root, **frame_style)
 for key, (name, price) in Chicken.items():
-    btn = tk.Button(menu_frame, text=f"{name} - ₱{price}", font=("Helvetica", 12), bg="#e0e0e0",
-                    command=lambda k=key: add_to_cart(k))
-    btn.pack(fill='x', padx=20, pady=4)
+    item_frame = tk.Frame(menu_frame, bg="#1e1e1e", padx=10, pady=5)
+    item_frame.pack(side="left", padx=10, pady=10)
 
-cart_label = tk.Label(root, text="🛒 Your Cart", font=("Helvetica", 14), bg="#f5f5f5")
-cart_label.pack(pady=10)
+    img_label = tk.Label(item_frame, image=images[key], bg="#1e1e1e")
+    img_label.image = images[key]
+    img_label.pack(side="top", pady=(5, 2))
 
-cart_list = tk.Listbox(root, width=40, font=("Helvetica", 11))
+    btn = tk.Button(item_frame, text=f"{name} - ₱{price}", command=lambda k=key: add_to_cart(k), **button_style)
+    btn.pack(side="top", pady=(10, 5))
+
+menu_frame.pack(pady=10)
+
+tk.Label(root, text="🛒 Your Cart", font=("Helvetica", 20), **label_style).pack(pady=10)
+cart_list = tk.Text(root, width=60, height=15, **text_style)
 cart_list.pack(pady=5)
+cart_list.configure(state="disabled")
 
-total_label = tk.Label(root, text="Total: ₱0", font=("Helvetica", 12, "bold"), bg="#f5f5f5")
+total_label = tk.Label(root, text="Total: ₱0", font=("Helvetica", 12, "bold"), **label_style)
 total_label.pack(pady=5)
 
-checkout_btn = tk.Button(root, text="Checkout", font=("Helvetica", 12), bg="#4caf50", fg="white", command=checkout)
-checkout_btn.pack(pady=15)
-
-tk.Button(root, text="Manage Cart", font=("Helvetica", 12), bg="#2196f3", fg="white", command=manage_cart).pack(pady=5)
+tk.Button(
+    root,
+    text="Checkout",
+    font=("Helvetica", 12),
+    bg="#4caf50",
+    fg="white",
+    bd=0,
+    padx=15,   # left-right padding inside button
+    pady=8,    # top-bottom padding inside button
+    command=checkout
+).pack(pady=10, padx=10)
+tk.Button(
+    root,
+    text="Manage",
+    font=("Helvetica", 12),
+    bg="#2196f3",
+    fg="white",
+    bd=0,
+    padx=20,   # left-right padding inside button
+    pady=8,    # top-bottom padding inside button
+    command=manage_cart
+).pack(pady=10, padx=10)
 
 root.mainloop()
