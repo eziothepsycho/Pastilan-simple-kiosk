@@ -9,6 +9,17 @@ except ImportError:
     messagebox.showerror("Missing dependency", "Please install Pillow: pip install pillow")
     raise
 
+import os, sys
+
+def resource_path(relative_path):
+    """Get absolute path to resource (for dev & for PyInstaller .exe)"""
+    try:
+        base_path = sys._MEIPASS  # PyInstaller temp folder
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 class FishKiosk(tk.Frame):
     def __init__(self, master):
         super().__init__(master, bg="#282c73")  # set Frame background too
@@ -47,19 +58,18 @@ class FishKiosk(tk.Frame):
 
         # --- IMAGES ---
         self.images = {
-            1: self.load_image("images/regular-fish.png"),
-            2: self.load_image("images/spicy-fish.png"),
-            3: self.load_image("images/regular-fish.png"),
-            4: self.load_image("images/spicy-fish.png")
+            1: self.load_image(resource_path("images/regular-fish.png")),
+            2: self.load_image(resource_path("images/spicy-fish.png")),
+            3: self.load_image(resource_path("images/regular-fish.png")),
+            4: self.load_image(resource_path("images/spicy-fish.png"))
         }
 
         self.addons_images = {
-        101: self.load_image("images/softdrinks.jpg"),
-        102: self.load_image("images/sunnysideup.jpg"),
-        103: self.load_image("images/boiledegg.jpg"),
-        104: self.load_image("images/shanghai.jpg")
-    }
-
+            101: self.load_image(resource_path("images/softdrinks.jpg")),
+            102: self.load_image(resource_path("images/sunnysideup.jpg")),
+            103: self.load_image(resource_path("images/boiledegg.jpg")),
+            104: self.load_image(resource_path("images/shanghai.jpg"))
+        }
 
         # --- UI ---
         tk.Button(self, text="← Back", font=("Helvetica", 12, "bold"), width=8,
@@ -129,7 +139,7 @@ class FishKiosk(tk.Frame):
             item_frame, text=f"{name}\n₱{price}", command=lambda k=key: self.add_to_cart(k),
             **self.button_style, wraplength=150, width=15
         ).pack(pady=(0,5))
-        
+
     # --- CENTER WINDOW HELPER ---
     def center_window(self, win, width=500, height=650):
         win.update_idletasks()
@@ -330,7 +340,7 @@ class FishKiosk(tk.Frame):
                   font=("Helvetica", 11), bg="#f44336", fg="white",
                   activebackground="#e57373", activeforeground="white",
                   bd=0, padx=20, pady=10).pack(pady=10)
-        
+
     def ask_customer_name(self, order_mode):
         name_popup = tk.Toplevel(self.root)
         name_popup.overrideredirect(True)
@@ -349,14 +359,14 @@ class FishKiosk(tk.Frame):
         tk.Button(name_popup, text="Confirm", font=("Helvetica", 12), bg="#4caf50", fg="white",
                 bd=0, width=10, command=lambda: self.confirm_customer_name(name_var.get(), order_mode, name_popup)
                 ).pack(pady=10)
-    
+
     def confirm_customer_name(self, customer_name, order_mode, popup):
         if not customer_name.strip():
             self.show_ok_popup("Please enter a name.")
             return
         popup.destroy()
         self.show_receipt(order_mode, customer_name)
-    
+
     def show_receipt(self, order_mode, customer_name):
         # Loading popup
         loading = tk.Toplevel(self.root)
@@ -367,8 +377,29 @@ class FishKiosk(tk.Frame):
         tk.Label(loading, text="⏳ Preparing your receipt...", font=("Helvetica", 14), bg="#ffffff", fg="#282c73").pack(pady=30)
 
         def finish_loading():
-            loading.destroy()
+            total = sum(price * qty for _, qty, price in self.cart)
 
+            # --- SAVE ORDER TO DATABASE ---
+            import sqlite3
+            from datetime import datetime
+            import random
+
+            ref_number = f"REF-{random.randint(1000, 9999)}"
+            date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            items_str = ", ".join([f"{qty}x {name}" for name, qty, _ in self.cart])
+        
+            db_path = resource_path("orders.db")
+            conn = sqlite3.connect(db_path)
+
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO orders (reference_number, date, customer_name, order_type, items, total)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (ref_number, date, customer_name, order_mode, items_str, total))
+            conn.commit()
+            conn.close()
+            print("💾 Order saved to database:", ref_number)
+            loading.destroy()
             # Receipt window
             receipt_win = tk.Toplevel(self.root)
             receipt_win.overrideredirect(True)
@@ -398,7 +429,11 @@ class FishKiosk(tk.Frame):
                 total += subtotal
 
             # Total and order type
+            import random
+
+            number = random.randint(1, 100)
             tk.Label(main_frame, text=f"TOTAL: ₱{total}", font=("Helvetica", 14, "bold"), bg="#D3D3D3", fg="#282c73").pack(pady=(10, 5))
+            tk.Label(main_frame, text=f"Order Number: {number}", font=("Helvetica", 12), bg="#D3D3D3", fg="#282c73").pack(pady=(0, 5))
             tk.Label(main_frame, text=f"Customer: {customer_name}", font=("Helvetica", 12), bg="#D3D3D3", fg="#282c73").pack(pady=(0, 5))
             tk.Label(main_frame, text=f"Order Type: {order_mode}", font=("Helvetica", 12), bg="#D3D3D3", fg="#282c73").pack(pady=(0, 15))
             tk.Label(main_frame, text="Thank you for your order!", font=("Helvetica", 12, "italic"), bg="#D3D3D3", fg="#282c73").pack(pady=(0, 15))
@@ -412,15 +447,10 @@ class FishKiosk(tk.Frame):
             tk.Button(main_frame, text="Close", font=("Helvetica", 12, "bold"), bg="#4caf50", fg="white", bd=0, padx=10, pady=10,
                     activebackground="#66bb6a", activeforeground="white",
                     command=close_and_restart).pack(side="bottom", pady=10)
-
             # Clear cart
             self.cart.clear()
             #self.update_cart_display()
-
         loading.after(1500, finish_loading)
-
-
-
 
     # --- POPUPS ---
     def show_ok_popup(self, message):
@@ -436,7 +466,7 @@ class FishKiosk(tk.Frame):
                 activebackground="#66bb6a", activeforeground="#ffffff",
                 bd=0, width=10).pack(pady=10)
 
-    
+
     def show_ok_popup_receipt(self, message):
         popup = tk.Toplevel(self.root)
         popup.overrideredirect(True)
